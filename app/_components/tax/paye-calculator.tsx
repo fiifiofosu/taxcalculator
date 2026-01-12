@@ -1,0 +1,142 @@
+"use client";
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { AnimatedNumber } from "@/components/animated-number";
+import type { TaxCalculationResult } from "@/lib/calculator";
+import { formatCurrency, formatInputValue } from "../utils";
+
+interface PAYECalculatorProps {
+  monthlyBasicIncome: string;
+  onMonthlyBasicIncomeChange: (value: string) => void;
+  monthlyAllowances: string;
+  onMonthlyAllowancesChange: (value: string) => void;
+  taxRelief: string;
+  onTaxReliefChange: (value: string) => void;
+  result: TaxCalculationResult | null;
+  hasError: boolean;
+  errorMessage?: string;
+  ssnitEnabled: boolean;
+}
+
+export function PAYECalculator({
+  monthlyBasicIncome,
+  onMonthlyBasicIncomeChange,
+  monthlyAllowances,
+  onMonthlyAllowancesChange,
+  taxRelief,
+  onTaxReliefChange,
+  result,
+  hasError,
+  errorMessage,
+  ssnitEnabled,
+}: PAYECalculatorProps) {
+
+  return (
+    <Card>
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Tax Calculator 🇬🇭</CardTitle>
+        <CardDescription>
+          Compute your net income, PAYE income tax and SSNIT deduction.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="basic-income">Monthly basic income</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">GH₵</span>
+            <Input
+              id="basic-income"
+              type="text"
+              inputMode="numeric"
+              value={monthlyBasicIncome}
+              onChange={(e) => {
+                const formatted = formatInputValue(e.target.value);
+                onMonthlyBasicIncomeChange(formatted);
+              }}
+              placeholder="0"
+              className="pl-12 text-right text-lg"
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="allowances">Monthly allowances*</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">GH₵</span>
+            <Input
+              id="allowances"
+              type="text"
+              inputMode="numeric"
+              value={monthlyAllowances}
+              onChange={(e) => {
+                const formatted = formatInputValue(e.target.value);
+                onMonthlyAllowancesChange(formatted);
+              }}
+              placeholder="0"
+              className="pl-12 text-right text-lg"
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="tax-relief">Tax relief</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">GH₵</span>
+            <Input
+              id="tax-relief"
+              type="text"
+              inputMode="numeric"
+              value={taxRelief}
+              onChange={(e) => {
+                const formatted = formatInputValue(e.target.value);
+                onTaxReliefChange(formatted);
+              }}
+              placeholder="0"
+              className="pl-12 text-right text-lg"
+            />
+          </div>
+        </div>
+        <div className="space-y-4 pt-4 border-t">
+          {hasError ? (
+            <p className="text-sm text-destructive text-center">
+              {errorMessage || "Please input valid amounts"}
+            </p>
+          ) : (
+            <>
+              <div className="text-center space-y-1">
+                <p className="text-sm text-muted-foreground">Net Income (take home)</p>
+                <p className="text-lg font-semibold">
+                  GH¢{" "}
+                  <AnimatedNumber
+                    value={result ? formatCurrency(result.netIncome) : "0.00"}
+                  />
+                </p>
+              </div>
+              <div className="flex justify-between items-start">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Income Tax</p>
+                  <p className="text-lg font-semibold">
+                    GH¢{" "}
+                    <AnimatedNumber
+                      value={result ? formatCurrency(result.incomeTax) : "0.00"}
+                    />
+                  </p>
+                </div>
+                <div className="space-y-1 text-right">
+                  <p className="text-sm text-muted-foreground">SSNIT</p>
+                  <p className="text-lg font-semibold">
+                    GH¢{" "}
+                    <AnimatedNumber
+                      value={result && ssnitEnabled ? formatCurrency(result.ssnitBreakdown.totalContribution) : "0.00"}
+                    />
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
