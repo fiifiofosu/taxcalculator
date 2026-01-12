@@ -168,7 +168,7 @@ export function VATCalculator({ year, onResultChange }: VATCalculatorProps) {
                   </p>
                 </div>
                 <div className="space-y-1 text-right">
-                  <p className="text-xs text-muted-foreground">FINAL COST (INCL. TAXES):</p>
+                  <p className="text-xs text-muted-foreground whitespace-nowrap">FINAL COST (INCL. TAXES):</p>
                   <p className="text-lg font-semibold">
                     GH₵ <AnimatedNumber value={formatCurrency(vatResult.finalCost)} />
                   </p>
