@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import currencySymbol from "currency-symbol";
 import * as XLSX from "xlsx";
-import type { TaxCalculationResult } from "./calculator";
+import type { TaxCalculationResult, DeductionItem, AllowanceItem } from "./calculator";
 import type { VATCalculationResult } from "./vat-calculator";
 
 // Parse formatted input back to number string (remove commas)
@@ -65,6 +65,10 @@ interface PAYEExportData {
     taxRelief: string;
     year: string;
     ssnitEnabled: boolean;
+    deductions?: DeductionItem[];
+    allowances?: AllowanceItem[];
+    workingDays?: string;
+    missedDays?: string;
   };
   result: TaxCalculationResult;
 }
@@ -135,6 +139,17 @@ export function exportPAYEToPDF(data: PAYEExportData): void {
     ["Income Tax", `${CURRENCY_SYMBOL} ${formatCurrency(result.incomeTax)}`],
     ["SSNIT Contribution", `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.totalContribution)}`],
   ];
+
+  // Add deductions and allowances totals if available
+  if (result.totalDeductions && parseFloat(result.totalDeductions) > 0) {
+    summaryData.push(["Total Deductions", `${CURRENCY_SYMBOL} ${formatCurrency(result.totalDeductions)}`]);
+  }
+  if (result.totalTaxableAllowances && parseFloat(result.totalTaxableAllowances) > 0) {
+    summaryData.push(["Total Taxable Allowances", `${CURRENCY_SYMBOL} ${formatCurrency(result.totalTaxableAllowances)}`]);
+  }
+  if (result.absenteeismDeduction && parseFloat(result.absenteeismDeduction) > 0) {
+    summaryData.push(["Absenteeism Deduction", `${CURRENCY_SYMBOL} ${formatCurrency(result.absenteeismDeduction)}`]);
+  }
 
   autoTable(doc, {
     startY: yPos,
@@ -233,7 +248,117 @@ export function exportPAYEToPDF(data: PAYEExportData): void {
       14,
       yPos + 5
     );
-    yPos += 10;
+    // Add SSNIT Tier breakdown
+    const tierData = [
+      [
+        "Tier 1 Payable (13.5/18.5)",
+        "13.5%",
+        `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.tier1Payable)}`,
+      ],
+      [
+        "Tier 2 Payable (Remaining)",
+        "5%",
+        `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.tier2Payable)}`,
+      ],
+    ];
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [["SSNIT Tier", "Rate", `Amount (${CURRENCY_SYMBOL})`]],
+      body: tierData,
+      theme: "striped",
+      headStyles: { fillColor: [59, 130, 246] },
+      styles: { fontSize: 10 },
+      margin: { left: 14, right: 14 },
+    });
+
+    yPos = (doc.lastAutoTable?.finalY ?? yPos) + 10;
+  }
+
+  // Deductions Breakdown
+  if (inputs.deductions && inputs.deductions.length > 0) {
+    doc.setFontSize(14);
+    doc.text("Deductions Breakdown", 14, yPos);
+    yPos += 8;
+
+    const deductionsData = inputs.deductions.map((deduction) => {
+      const value = parseInputValue(deduction.value || "0");
+      return [
+        deduction.label || "Unnamed",
+        `${CURRENCY_SYMBOL} ${formatCurrency(value)}`,
+      ];
+    });
+
+    // Add total
+    if (result.totalDeductions && parseFloat(result.totalDeductions) > 0) {
+      deductionsData.push(["Total Deductions", `${CURRENCY_SYMBOL} ${formatCurrency(result.totalDeductions)}`]);
+    }
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [["Deduction", `Amount (${CURRENCY_SYMBOL})`]],
+      body: deductionsData,
+      theme: "striped",
+      headStyles: { fillColor: [59, 130, 246] },
+      styles: { fontSize: 10 },
+      margin: { left: 14, right: 14 },
+      footStyles: { fontStyle: "bold" },
+    });
+
+    yPos = (doc.lastAutoTable?.finalY ?? yPos) + 15;
+  }
+
+  // Allowances Breakdown
+  if (inputs.allowances && inputs.allowances.length > 0) {
+    doc.setFontSize(14);
+    doc.text("Allowances Breakdown", 14, yPos);
+    yPos += 8;
+
+    const allowancesData = inputs.allowances.map((allowance) => {
+      const value = parseInputValue(allowance.value || "0");
+      return [
+        allowance.label || "Unnamed",
+        `${CURRENCY_SYMBOL} ${formatCurrency(value)}`,
+        allowance.taxable ? "Yes" : "No",
+      ];
+    });
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [["Allowance", `Amount (${CURRENCY_SYMBOL})`, "Taxable"]],
+      body: allowancesData,
+      theme: "striped",
+      headStyles: { fillColor: [59, 130, 246] },
+      styles: { fontSize: 10 },
+      margin: { left: 14, right: 14 },
+    });
+
+    yPos = (doc.lastAutoTable?.finalY ?? yPos) + 15;
+  }
+
+  // Absenteeism Section
+  if (inputs.workingDays && inputs.missedDays && parseFloat(parseInputValue(inputs.missedDays)) > 0) {
+    doc.setFontSize(14);
+    doc.text("Absenteeism", 14, yPos);
+    yPos += 8;
+
+    const absenteeismData = [
+      ["Working Days", inputs.workingDays],
+      ["Missed Days", inputs.missedDays],
+      ["Absenteeism Deduction", `${CURRENCY_SYMBOL} ${formatCurrency(result.absenteeismDeduction || "0")}`],
+    ];
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [["Field", "Value"]],
+      body: absenteeismData,
+      theme: "striped",
+      headStyles: { fillColor: [59, 130, 246] },
+      styles: { fontSize: 10 },
+      margin: { left: 14, right: 14 },
+    });
+
+    yPos = (doc.lastAutoTable?.finalY ?? yPos) + 15;
   }
 
   // Footer
@@ -489,6 +614,15 @@ export function exportPAYEToExcel(data: PAYEExportData): void {
     ["Income Tax", `${CURRENCY_SYMBOL} ${formatCurrency(result.incomeTax)}`],
     ["SSNIT Contribution", `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.totalContribution)}`],
   ];
+  if (result.totalDeductions && parseFloat(result.totalDeductions) > 0) {
+    summaryData.push(["Total Deductions", `${CURRENCY_SYMBOL} ${formatCurrency(result.totalDeductions)}`]);
+  }
+  if (result.totalTaxableAllowances && parseFloat(result.totalTaxableAllowances) > 0) {
+    summaryData.push(["Total Taxable Allowances", `${CURRENCY_SYMBOL} ${formatCurrency(result.totalTaxableAllowances)}`]);
+  }
+  if (result.absenteeismDeduction && parseFloat(result.absenteeismDeduction) > 0) {
+    summaryData.push(["Absenteeism Deduction", `${CURRENCY_SYMBOL} ${formatCurrency(result.absenteeismDeduction)}`]);
+  }
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
   XLSX.utils.book_append_sheet(workbook, summarySheet, "Summary");
 
@@ -534,9 +668,67 @@ export function exportPAYEToExcel(data: PAYEExportData): void {
         `${result.ssnitBreakdown.employeeRate + result.ssnitBreakdown.employerRate}%`,
         `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.totalContribution)}`,
       ],
+      [
+        "Tier 1 Payable (13.5/18.5)",
+        "13.5%",
+        `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.tier1Payable)}`,
+      ],
+      [
+        "Tier 2 Payable (Remaining)",
+        "5%",
+        `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.tier2Payable)}`,
+      ],
     ];
     const ssnitSheet = XLSX.utils.aoa_to_sheet(ssnitData);
     XLSX.utils.book_append_sheet(workbook, ssnitSheet, "SSNIT Breakdown");
+  }
+
+  // Deductions Breakdown sheet
+  if (inputs.deductions && inputs.deductions.length > 0) {
+    const deductionsData = [
+      ["Deduction", "Amount (GH¢)"],
+      ...inputs.deductions.map((deduction) => {
+        const value = parseInputValue(deduction.value || "0");
+        return [
+          deduction.label || "Unnamed",
+          `${CURRENCY_SYMBOL} ${formatCurrency(value)}`,
+        ];
+      }),
+    ];
+    if (result.totalDeductions && parseFloat(result.totalDeductions) > 0) {
+      deductionsData.push(["Total Deductions", `${CURRENCY_SYMBOL} ${formatCurrency(result.totalDeductions)}`]);
+    }
+    const deductionsSheet = XLSX.utils.aoa_to_sheet(deductionsData);
+    XLSX.utils.book_append_sheet(workbook, deductionsSheet, "Deductions");
+  }
+
+  // Allowances Breakdown sheet
+  if (inputs.allowances && inputs.allowances.length > 0) {
+    const allowancesData = [
+      ["Allowance", "Amount (GH¢)", "Taxable"],
+      ...inputs.allowances.map((allowance) => {
+        const value = parseInputValue(allowance.value || "0");
+        return [
+          allowance.label || "Unnamed",
+          `${CURRENCY_SYMBOL} ${formatCurrency(value)}`,
+          allowance.taxable ? "Yes" : "No",
+        ];
+      }),
+    ];
+    const allowancesSheet = XLSX.utils.aoa_to_sheet(allowancesData);
+    XLSX.utils.book_append_sheet(workbook, allowancesSheet, "Allowances");
+  }
+
+  // Absenteeism sheet
+  if (inputs.workingDays && inputs.missedDays && parseFloat(parseInputValue(inputs.missedDays)) > 0) {
+    const absenteeismData = [
+      ["Field", "Value"],
+      ["Working Days", inputs.workingDays],
+      ["Missed Days", inputs.missedDays],
+      ["Absenteeism Deduction", `${CURRENCY_SYMBOL} ${formatCurrency(result.absenteeismDeduction || "0")}`],
+    ];
+    const absenteeismSheet = XLSX.utils.aoa_to_sheet(absenteeismData);
+    XLSX.utils.book_append_sheet(workbook, absenteeismSheet, "Absenteeism");
   }
 
   const fileName = `PAYE_Tax_Calculation_${new Date().toISOString().split("T")[0]}.xlsx`;
@@ -566,6 +758,15 @@ export function exportPAYEToCSV(data: PAYEExportData): void {
   rows.push(["Results Summary"]);
   rows.push(["Item", "Amount"]);
   rows.push(["Net Income (Take Home)", `${CURRENCY_SYMBOL} ${formatCurrency(result.netIncome)}`]);
+  if (result.totalDeductions && parseFloat(result.totalDeductions) > 0) {
+    rows.push(["Total Deductions", `${CURRENCY_SYMBOL} ${formatCurrency(result.totalDeductions)}`]);
+  }
+  if (result.totalTaxableAllowances && parseFloat(result.totalTaxableAllowances) > 0) {
+    rows.push(["Total Taxable Allowances", `${CURRENCY_SYMBOL} ${formatCurrency(result.totalTaxableAllowances)}`]);
+  }
+  if (result.absenteeismDeduction && parseFloat(result.absenteeismDeduction) > 0) {
+    rows.push(["Absenteeism Deduction", `${CURRENCY_SYMBOL} ${formatCurrency(result.absenteeismDeduction)}`]);
+  }
   rows.push(["Income Tax", `${CURRENCY_SYMBOL} ${formatCurrency(result.incomeTax)}`]);
   rows.push(["SSNIT Contribution", `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.totalContribution)}`]);
   rows.push([]);
@@ -610,6 +811,56 @@ export function exportPAYEToCSV(data: PAYEExportData): void {
       `${result.ssnitBreakdown.employeeRate + result.ssnitBreakdown.employerRate}%`,
       `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.totalContribution)}`,
     ]);
+    rows.push([
+      "Tier 1 Payable (13.5/18.5)",
+      "13.5%",
+      `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.tier1Payable)}`,
+    ]);
+    rows.push([
+      "Tier 2 Payable (Remaining)",
+      "5%",
+      `${CURRENCY_SYMBOL} ${formatCurrency(result.ssnitBreakdown.tier2Payable)}`,
+    ]);
+    rows.push([]);
+  }
+
+  // Deductions Breakdown
+  if (inputs.deductions && inputs.deductions.length > 0) {
+    rows.push(["Deductions Breakdown"]);
+    rows.push(["Deduction", "Amount (GH¢)"]);
+    inputs.deductions.forEach((deduction) => {
+      const value = parseInputValue(deduction.value || "0");
+      rows.push([deduction.label || "Unnamed", `${CURRENCY_SYMBOL} ${formatCurrency(value)}`]);
+    });
+    if (result.totalDeductions && parseFloat(result.totalDeductions) > 0) {
+      rows.push(["Total Deductions", `${CURRENCY_SYMBOL} ${formatCurrency(result.totalDeductions)}`]);
+    }
+    rows.push([]);
+  }
+
+  // Allowances Breakdown
+  if (inputs.allowances && inputs.allowances.length > 0) {
+    rows.push(["Allowances Breakdown"]);
+    rows.push(["Allowance", "Amount (GH¢)", "Taxable"]);
+    inputs.allowances.forEach((allowance) => {
+      const value = parseInputValue(allowance.value || "0");
+      rows.push([
+        allowance.label || "Unnamed",
+        `${CURRENCY_SYMBOL} ${formatCurrency(value)}`,
+        allowance.taxable ? "Yes" : "No",
+      ]);
+    });
+    rows.push([]);
+  }
+
+  // Absenteeism
+  if (inputs.workingDays && inputs.missedDays && parseFloat(parseInputValue(inputs.missedDays)) > 0) {
+    rows.push(["Absenteeism"]);
+    rows.push(["Field", "Value"]);
+    rows.push(["Working Days", inputs.workingDays]);
+    rows.push(["Missed Days", inputs.missedDays]);
+    rows.push(["Absenteeism Deduction", `${CURRENCY_SYMBOL} ${formatCurrency(result.absenteeismDeduction || "0")}`]);
+    rows.push([]);
   }
 
   // Convert to CSV

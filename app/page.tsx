@@ -123,6 +123,10 @@ export default function Home() {
               taxRelief,
               year,
               ssnitEnabled,
+              deductions,
+              allowances,
+              workingDays,
+              missedDays,
             },
             result,
           };
